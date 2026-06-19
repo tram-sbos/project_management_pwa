@@ -118,6 +118,7 @@ export type MailSettings = {
   recipients: string[]
   reportType: MailReportType
   lastSentAt: string
+  nextRunAt: string
 }
 
 export type DashboardStats = {

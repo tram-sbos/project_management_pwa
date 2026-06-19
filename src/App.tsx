@@ -75,6 +75,7 @@ const defaultMailSettings: MailSettings = {
   recipients: [],
   reportType: 'summary',
   lastSentAt: '',
+  nextRunAt: '',
 }
 
 type DashboardFilter = {
@@ -2107,7 +2108,11 @@ function MailSettingsPanel({
         </div>
       </div>
       <div className="mail-footer">
-        <span>Last sent: {form.lastSentAt ? formatDateTime(form.lastSentAt) : 'Not sent yet'}</span>
+        <span>
+          Last sent: {form.lastSentAt ? formatDateTime(form.lastSentAt) : 'Not sent yet'}
+          <br />
+          Next run: {form.enabled && form.nextRunAt ? formatDateTime(form.nextRunAt) : 'Not scheduled'}
+        </span>
         <div>
           <button className="secondary-button" onClick={submitTest} disabled={testing || !form.recipients.length}>
             {testing ? <Loader2 className="spin" size={17} /> : <Bell size={17} />}

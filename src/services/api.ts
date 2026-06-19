@@ -196,6 +196,7 @@ let localMailSettings: MailSettings = {
   recipients: [],
   reportType: 'summary',
   lastSentAt: '',
+  nextRunAt: '',
 }
 
 const localTeam: TeamMember[] = [
@@ -681,6 +682,7 @@ function mailSettingsFromRow(row: Record<string, unknown>): MailSettings {
     recipients,
     reportType: asReportType(row.report_type ?? row.reportType),
     lastSentAt: String(row.last_sent_at ?? row.lastSentAt ?? ''),
+    nextRunAt: String(row.next_run_at ?? row.nextRunAt ?? ''),
   }
 }
 
@@ -799,6 +801,7 @@ function mailSettingsToRow(settings: MailSettings) {
     recipients: settings.recipients.join(','),
     report_type: settings.reportType,
     last_sent_at: settings.lastSentAt,
+    next_run_at: settings.nextRunAt,
   }
 }
 
