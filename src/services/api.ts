@@ -190,6 +190,8 @@ const localMilestones: Milestone[] = [
 const localActivity: ActivityItem[] = []
 const localComments: TaskComment[] = []
 let localMailSettings: MailSettings = {
+  id: 'DEFAULT',
+  name: 'Daily Summary',
   enabled: false,
   interval: 'daily',
   sendTime: '08:00',
@@ -334,9 +336,9 @@ export const api = {
   },
 
   async getMailSettings() {
-    if (!isLiveApi()) return { ...localMailSettings }
-    const row = await post<Record<string, unknown>>('getMailSettings')
-    return mailSettingsFromRow(row)
+    if (!isLiveApi()) return [{ ...localMailSettings }]
+    const rows = await post<Record<string, unknown>[] | Record<string, unknown>>('getMailSettings')
+    return Array.isArray(rows) ? rows.map(mailSettingsFromRow) : [mailSettingsFromRow(rows)]
   },
 
   async createProject(project: Project) {
@@ -528,13 +530,15 @@ export const api = {
     return { id: memberId }
   },
 
-  async saveMailSettings(settings: MailSettings) {
+  async saveMailSettings(settings: MailSettings[]) {
     if (!isLiveApi()) {
-      localMailSettings = { ...settings }
-      return { ...localMailSettings }
+      localMailSettings = { ...(settings[0] ?? localMailSettings) }
+      return settings.map((item) => ({ ...item }))
     }
-    const row = await post<Record<string, unknown>>('saveMailSettings', mailSettingsToRow(settings))
-    return mailSettingsFromRow(row)
+    const rows = await post<Record<string, unknown>[] | Record<string, unknown>>('saveMailSettings', {
+      schedules: settings.map(mailSettingsToRow),
+    })
+    return Array.isArray(rows) ? rows.map(mailSettingsFromRow) : [mailSettingsFromRow(rows)]
   },
 
   async sendProjectSummaryEmail(settings: MailSettings) {
@@ -676,6 +680,8 @@ function mailSettingsFromRow(row: Record<string, unknown>): MailSettings {
         .filter(Boolean)
 
   return {
+    id: String(row.setting_id ?? row.id ?? 'DEFAULT'),
+    name: String(row.schedule_name ?? row.name ?? 'Daily Summary'),
     enabled: row.enabled === true || String(row.enabled ?? '').toUpperCase() === 'TRUE',
     interval: asMailInterval(row.interval),
     sendTime: String(row.send_time ?? row.sendTime ?? '08:00').slice(0, 5),
@@ -796,6 +802,8 @@ function teamToRow(member: TeamMember) {
 function mailSettingsToRow(settings: MailSettings) {
   return {
     enabled: settings.enabled,
+    setting_id: settings.id,
+    schedule_name: settings.name,
     interval: settings.interval,
     send_time: settings.sendTime,
     recipients: settings.recipients.join(','),

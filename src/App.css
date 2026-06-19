@@ -1301,6 +1301,30 @@ td small {
   gap: 12px;
 }
 
+.schedule-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.schedule-tabs button {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border: 1px solid #dde4ee;
+  border-radius: 999px;
+  color: #475569;
+  background: #f8fafc;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.schedule-tabs button.active {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(135deg, #fc8019, #38bdf8);
+}
+
 .mail-control-grid label {
   display: grid;
   gap: 7px;

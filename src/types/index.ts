@@ -112,6 +112,8 @@ export type MailInterval = 'daily' | 'weekly' | 'monthly'
 export type MailReportType = 'summary' | 'overdue' | 'full'
 
 export type MailSettings = {
+  id: string
+  name: string
   enabled: boolean
   interval: MailInterval
   sendTime: string

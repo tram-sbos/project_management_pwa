@@ -69,6 +69,8 @@ const themeStorageKey = 'project-management-theme'
 type AppTheme = 'classic' | 'premium-dark'
 
 const defaultMailSettings: MailSettings = {
+  id: 'DEFAULT',
+  name: 'Daily Summary',
   enabled: false,
   interval: 'daily',
   sendTime: '08:00',
@@ -107,7 +109,7 @@ function App() {
   const [subModules, setSubModules] = useState<SubModule[]>([])
   const [activity, setActivity] = useState<ActivityItem[]>([])
   const [comments, setComments] = useState<TaskComment[]>([])
-  const [mailSettings, setMailSettings] = useState<MailSettings>(defaultMailSettings)
+  const [mailSettings, setMailSettings] = useState<MailSettings[]>([defaultMailSettings])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
@@ -402,16 +404,14 @@ function App() {
     flash(live ? 'Task status synced' : 'Task status updated locally')
   }
 
-  async function saveMailSchedule(settings: MailSettings) {
+  async function saveMailSchedule(settings: MailSettings[]) {
     const saved = await api.saveMailSettings(settings)
     setMailSettings(saved)
     flash(live ? 'Mail schedule saved to Google Sheets' : 'Mail schedule saved locally')
   }
 
   async function sendMailNow(settings: MailSettings) {
-    const saved = await api.saveMailSettings(settings)
-    setMailSettings(saved)
-    const result = await api.sendProjectSummaryEmail(saved)
+    const result = await api.sendProjectSummaryEmail(settings)
     flash(live ? `Mail sent to ${result.recipients} user(s)` : 'Mail preview simulated locally')
   }
 
@@ -747,7 +747,7 @@ function SectionContent(props: {
   stats: DashboardStats
   live: boolean
   theme: AppTheme
-  mailSettings: MailSettings
+  mailSettings: MailSettings[]
   dashboardFilter: DashboardFilter | null
   onNewProject: () => void
   onEditProject: (project: Project) => void
@@ -766,7 +766,7 @@ function SectionContent(props: {
   onEditTeamMember: (member: TeamMember) => void
   onDeleteTeamMember: (member: TeamMember) => void
   onThemeChange: (theme: AppTheme) => void
-  onSaveMailSettings: (settings: MailSettings) => Promise<void>
+  onSaveMailSettings: (settings: MailSettings[]) => Promise<void>
   onSendMailNow: (settings: MailSettings) => Promise<void>
 }) {
   const {
@@ -1930,9 +1930,9 @@ function SettingsView({
   live: boolean
   theme: AppTheme
   team: TeamMember[]
-  mailSettings: MailSettings
+  mailSettings: MailSettings[]
   onThemeChange: (theme: AppTheme) => void
-  onSaveMailSettings: (settings: MailSettings) => Promise<void>
+  onSaveMailSettings: (settings: MailSettings[]) => Promise<void>
   onSendMailNow: (settings: MailSettings) => Promise<void>
 }) {
   const apiUrl = import.meta.env.VITE_APPS_SCRIPT_URL || 'Local demo mode'
@@ -1993,17 +1993,23 @@ function MailSettingsPanel({
   onSendNow,
 }: {
   team: TeamMember[]
-  settings: MailSettings
-  onSave: (settings: MailSettings) => Promise<void>
+  settings: MailSettings[]
+  onSave: (settings: MailSettings[]) => Promise<void>
   onSendNow: (settings: MailSettings) => Promise<void>
 }) {
-  const [form, setForm] = useState<MailSettings>(settings)
+  const [forms, setForms] = useState<MailSettings[]>(settings.length ? settings : [defaultMailSettings])
+  const [activeIndex, setActiveIndex] = useState(0)
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const activeUsers = team.filter((member) => member.status !== 'Inactive' && member.email)
+  const form = forms[Math.min(activeIndex, forms.length - 1)] ?? defaultMailSettings
+
+  function updateActive(updater: (current: MailSettings) => MailSettings) {
+    setForms((current) => current.map((item, index) => (index === activeIndex ? updater(item) : item)))
+  }
 
   function toggleRecipient(memberId: string) {
-    setForm((current) => ({
+    updateActive((current) => ({
       ...current,
       recipients: current.recipients.includes(memberId)
         ? current.recipients.filter((id) => id !== memberId)
@@ -2014,7 +2020,7 @@ function MailSettingsPanel({
   async function submitSave() {
     setSaving(true)
     try {
-      await onSave(form)
+      await onSave(forms)
     } finally {
       setSaving(false)
     }
@@ -2029,30 +2035,64 @@ function MailSettingsPanel({
     }
   }
 
+  function addSchedule() {
+    const next = {
+      ...defaultMailSettings,
+      id: `MS${Date.now()}`,
+      name: `Schedule ${forms.length + 1}`,
+    }
+    setForms((current) => [...current, next])
+    setActiveIndex(forms.length)
+  }
+
+  function removeSchedule() {
+    if (forms.length <= 1) return
+    setForms((current) => current.filter((_, index) => index !== activeIndex))
+    setActiveIndex((current) => Math.max(0, current - 1))
+  }
+
   return (
     <section className="panel settings-panel mail-settings-panel">
-      <PanelTitle title="Mail Reports" />
+      <PanelTitle title="Mail Reports" action="Add Schedule" onAction={addSchedule} />
+      <div className="schedule-tabs">
+        {forms.map((item, index) => (
+          <button
+            key={item.id || index}
+            className={index === activeIndex ? 'active' : ''}
+            onClick={() => setActiveIndex(index)}
+          >
+            {item.name || `Schedule ${index + 1}`}
+          </button>
+        ))}
+      </div>
       <div className="mail-toggle-row">
         <div>
-          <strong>Scheduled summary</strong>
+          <strong>{form.name || 'Schedule'}</strong>
           <span>{form.enabled ? 'Enabled' : 'Disabled'}</span>
         </div>
         <label className="switch-control">
           <input
             type="checkbox"
             checked={form.enabled}
-            onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))}
+            onChange={(event) => updateActive((current) => ({ ...current, enabled: event.target.checked }))}
           />
           <i />
         </label>
       </div>
       <div className="mail-control-grid">
         <label>
+          Schedule name
+          <input
+            value={form.name}
+            onChange={(event) => updateActive((current) => ({ ...current, name: event.target.value }))}
+          />
+        </label>
+        <label>
           Interval
           <select
             value={form.interval}
             onChange={(event) =>
-              setForm((current) => ({ ...current, interval: event.target.value as MailSettings['interval'] }))
+              updateActive((current) => ({ ...current, interval: event.target.value as MailSettings['interval'] }))
             }
           >
             <option value="daily">Daily</option>
@@ -2065,7 +2105,7 @@ function MailSettingsPanel({
           <input
             type="time"
             value={form.sendTime}
-            onChange={(event) => setForm((current) => ({ ...current, sendTime: event.target.value }))}
+            onChange={(event) => updateActive((current) => ({ ...current, sendTime: event.target.value }))}
           />
         </label>
         <label>
@@ -2073,7 +2113,7 @@ function MailSettingsPanel({
           <select
             value={form.reportType}
             onChange={(event) =>
-              setForm((current) => ({ ...current, reportType: event.target.value as MailSettings['reportType'] }))
+              updateActive((current) => ({ ...current, reportType: event.target.value as MailSettings['reportType'] }))
             }
           >
             <option value="summary">Summary</option>
@@ -2114,6 +2154,10 @@ function MailSettingsPanel({
           Next run: {form.enabled && form.nextRunAt ? formatDateTime(form.nextRunAt) : 'Not scheduled'}
         </span>
         <div>
+          <button className="secondary-button" onClick={removeSchedule} disabled={forms.length <= 1}>
+            <Trash2 size={17} />
+            Remove
+          </button>
           <button className="secondary-button" onClick={submitTest} disabled={testing || !form.recipients.length}>
             {testing ? <Loader2 className="spin" size={17} /> : <Bell size={17} />}
             Send Test
