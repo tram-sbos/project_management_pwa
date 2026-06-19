@@ -264,6 +264,11 @@ function App() {
   }
 
   async function saveProject(project: Project) {
+    const validationError = validateDateRange('Project', project.startDate, project.endDate)
+    if (validationError) {
+      flash(validationError)
+      return
+    }
     const saved = project.id
       ? await api.updateProject(project)
       : await api.createProject(project)
@@ -282,6 +287,12 @@ function App() {
   }
 
   async function saveTask(task: TaskItem) {
+    const parentStartDate = getTaskParentStartDate(task, projects, modules, subModules)
+    const validationError = validateDueDate('Task', parentStartDate, task.dueDate)
+    if (validationError) {
+      flash(validationError)
+      return
+    }
     const saved = task.id ? await api.updateTask(task) : await api.createTask(task)
     const nextTasks = upsert(tasks, saved, 'id')
     setTasks(nextTasks)
@@ -308,6 +319,11 @@ function App() {
   }
 
   async function saveModule(module: WorkModule) {
+    const validationError = validateDateRange('Module', module.startDate, module.endDate)
+    if (validationError) {
+      flash(validationError)
+      return
+    }
     const saved = module.id ? await api.updateModule(module) : await api.createModule(module)
     const nextModules = upsert(modules, saved, 'id')
     setModules(nextModules)
@@ -326,6 +342,11 @@ function App() {
   }
 
   async function saveSubModule(submodule: SubModule) {
+    const validationError = validateDateRange('Sub module', submodule.startDate, submodule.endDate)
+    if (validationError) {
+      flash(validationError)
+      return
+    }
     const saved = submodule.id
       ? await api.updateSubModule(submodule)
       : await api.createSubModule(submodule)
@@ -365,6 +386,12 @@ function App() {
   }
 
   async function saveMilestone(milestone: Milestone) {
+    const project = projects.find((item) => item.id === milestone.projectId)
+    const validationError = validateDueDate('Milestone', project?.startDate || '', milestone.dueDate)
+    if (validationError) {
+      flash(validationError)
+      return
+    }
     const saved = milestone.id
       ? await api.updateMilestone(milestone)
       : await api.createMilestone(milestone)
@@ -2246,7 +2273,7 @@ function ProjectModal({
           </select>
         </label>
         <Field label="Start date" type="date" value={form.startDate} onChange={(startDate) => setForm({ ...form, startDate })} />
-        <Field label="End date" type="date" value={form.endDate} onChange={(endDate) => setForm({ ...form, endDate })} />
+        <Field label="End date" type="date" value={form.endDate} min={form.startDate} onChange={(endDate) => setForm({ ...form, endDate })} />
         <Field label="Budget" type="number" value={form.budget} onChange={(budget) => setForm({ ...form, budget })} />
         <label>
           Status
@@ -2311,6 +2338,7 @@ function TaskModal({
   )
   const availableModules = modules.filter((module) => module.projectId === form.projectId)
   const availableSubModules = subModules.filter((submodule) => submodule.moduleId === form.moduleId)
+  const minimumDueDate = getTaskParentStartDate(form, projects, modules, subModules)
 
   async function submit(event: FormEvent) {
     event.preventDefault()
@@ -2372,7 +2400,7 @@ function TaskModal({
             ))}
           </select>
         </label>
-        <Field label="Due date" type="date" value={form.dueDate} onChange={(dueDate) => setForm({ ...form, dueDate })} />
+        <Field label="Due date" type="date" value={form.dueDate} min={minimumDueDate} onChange={(dueDate) => setForm({ ...form, dueDate })} />
         <Field label="Checklist" value={form.checklist} onChange={(checklist) => setForm({ ...form, checklist })} />
         <Field label="Attachment URL" type="url" value={form.attachmentUrl} onChange={(attachmentUrl) => setForm({ ...form, attachmentUrl })} />
         <label>
@@ -2533,7 +2561,13 @@ function MilestoneModal({
             ))}
           </select>
         </label>
-        <Field label="Due date" type="date" value={form.dueDate} onChange={(dueDate) => setForm({ ...form, dueDate })} />
+        <Field
+          label="Due date"
+          type="date"
+          value={form.dueDate}
+          min={projects.find((project) => project.id === form.projectId)?.startDate || ''}
+          onChange={(dueDate) => setForm({ ...form, dueDate })}
+        />
         <label>
           Status
           <select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })}>
@@ -2965,7 +2999,7 @@ function ModuleModal({
         <Field label="Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
         <OwnerSelect value={form.owner} team={team} onChange={(owner) => setForm({ ...form, owner })} />
         <Field label="Start date" type="date" value={form.startDate} onChange={(startDate) => setForm({ ...form, startDate })} />
-        <Field label="End date" type="date" value={form.endDate} onChange={(endDate) => setForm({ ...form, endDate })} />
+        <Field label="End date" type="date" value={form.endDate} min={form.startDate} onChange={(endDate) => setForm({ ...form, endDate })} />
         <StatusSelect value={form.status} onChange={(status) => setForm({ ...form, status })} />
         <FormActions saving={saving} onClose={onClose} />
       </form>
@@ -3020,7 +3054,7 @@ function SubModuleModal({
         <Field label="Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
         <OwnerSelect value={form.owner} team={team} onChange={(owner) => setForm({ ...form, owner })} />
         <Field label="Start date" type="date" value={form.startDate} onChange={(startDate) => setForm({ ...form, startDate })} />
-        <Field label="End date" type="date" value={form.endDate} onChange={(endDate) => setForm({ ...form, endDate })} />
+        <Field label="End date" type="date" value={form.endDate} min={form.startDate} onChange={(endDate) => setForm({ ...form, endDate })} />
         <StatusSelect value={form.status} onChange={(status) => setForm({ ...form, status })} />
         <FormActions saving={saving} onClose={onClose} />
       </form>
@@ -3088,17 +3122,19 @@ function Field({
   label,
   value,
   type = 'text',
+  min,
   onChange,
 }: {
   label: string
   value: string
   type?: string
+  min?: string
   onChange: (value: string) => void
 }) {
   return (
     <label>
       {label}
-      <input required type={type} value={value} onChange={(event) => onChange(event.target.value)} />
+      <input required type={type} value={value} min={min} onChange={(event) => onChange(event.target.value)} />
     </label>
   )
 }
@@ -3290,6 +3326,32 @@ function daysUntil(dateValue: string) {
   if (Number.isNaN(target.getTime())) return Number.POSITIVE_INFINITY
   const current = new Date(`${today()}T00:00:00`)
   return Math.ceil((target.getTime() - current.getTime()) / 86400000)
+}
+
+function validateDateRange(label: string, startDate: string, endDate: string) {
+  if (!startDate || !endDate) return ''
+  if (endDate < startDate) return `${label} end date cannot be earlier than start date.`
+  return ''
+}
+
+function validateDueDate(label: string, startDate: string, dueDate: string) {
+  if (!startDate || !dueDate) return ''
+  if (dueDate < startDate) return `${label} due date cannot be earlier than start date.`
+  return ''
+}
+
+function getTaskParentStartDate(
+  task: TaskItem,
+  projects: Project[],
+  modules: WorkModule[],
+  subModules: SubModule[],
+) {
+  const submodule = subModules.find((item) => item.id === task.submoduleId)
+  if (submodule?.startDate) return submodule.startDate
+  const module = modules.find((item) => item.id === task.moduleId)
+  if (module?.startDate) return module.startDate
+  const project = projects.find((item) => item.id === task.projectId)
+  return project?.startDate || ''
 }
 
 function upsert<T extends Record<string, string>>(rows: T[], row: T, key: keyof T) {
