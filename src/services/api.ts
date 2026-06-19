@@ -1,5 +1,6 @@
 import type {
   ActivityItem,
+  MailSettings,
   Milestone,
   Project,
   Responsibility,
@@ -188,6 +189,14 @@ const localMilestones: Milestone[] = [
 
 const localActivity: ActivityItem[] = []
 const localComments: TaskComment[] = []
+let localMailSettings: MailSettings = {
+  enabled: false,
+  interval: 'daily',
+  sendTime: '08:00',
+  recipients: [],
+  reportType: 'summary',
+  lastSentAt: '',
+}
 
 const localTeam: TeamMember[] = [
   {
@@ -321,6 +330,12 @@ export const api = {
     if (!isLiveApi()) return [...localComments]
     const rows = await post<Record<string, unknown>[]>('getComments')
     return rows.map(commentFromRow)
+  },
+
+  async getMailSettings() {
+    if (!isLiveApi()) return { ...localMailSettings }
+    const row = await post<Record<string, unknown>>('getMailSettings')
+    return mailSettingsFromRow(row)
   },
 
   async createProject(project: Project) {
@@ -511,6 +526,26 @@ export const api = {
     await post('deleteTeamMember', { user_id: memberId })
     return { id: memberId }
   },
+
+  async saveMailSettings(settings: MailSettings) {
+    if (!isLiveApi()) {
+      localMailSettings = { ...settings }
+      return { ...localMailSettings }
+    }
+    const row = await post<Record<string, unknown>>('saveMailSettings', mailSettingsToRow(settings))
+    return mailSettingsFromRow(row)
+  },
+
+  async sendProjectSummaryEmail(settings: MailSettings) {
+    if (!isLiveApi()) {
+      localMailSettings = { ...settings, lastSentAt: new Date().toISOString() }
+      return { message: 'Mail simulated', recipients: settings.recipients.length }
+    }
+    return post<{ message: string; recipients: number; sent_at: string }>(
+      'sendProjectSummaryEmail',
+      mailSettingsToRow(settings),
+    )
+  },
 }
 
 function projectFromRow(row: Record<string, unknown>): Project {
@@ -631,6 +666,24 @@ function teamFromRow(row: Record<string, unknown>): TeamMember {
   }
 }
 
+function mailSettingsFromRow(row: Record<string, unknown>): MailSettings {
+  const recipients = Array.isArray(row.recipients)
+    ? row.recipients.map(String)
+    : String(row.recipients ?? '')
+        .split(',')
+        .map((recipient) => recipient.trim())
+        .filter(Boolean)
+
+  return {
+    enabled: row.enabled === true || String(row.enabled ?? '').toUpperCase() === 'TRUE',
+    interval: asMailInterval(row.interval),
+    sendTime: String(row.send_time ?? row.sendTime ?? '08:00').slice(0, 5),
+    recipients,
+    reportType: asReportType(row.report_type ?? row.reportType),
+    lastSentAt: String(row.last_sent_at ?? row.lastSentAt ?? ''),
+  }
+}
+
 function projectToRow(project: Project) {
   return {
     project_id: project.id,
@@ -736,6 +789,25 @@ function teamToRow(member: TeamMember) {
     capacity: member.capacity,
     status: member.status,
   }
+}
+
+function mailSettingsToRow(settings: MailSettings) {
+  return {
+    enabled: settings.enabled,
+    interval: settings.interval,
+    send_time: settings.sendTime,
+    recipients: settings.recipients.join(','),
+    report_type: settings.reportType,
+    last_sent_at: settings.lastSentAt,
+  }
+}
+
+function asMailInterval(value: unknown): MailSettings['interval'] {
+  return value === 'weekly' || value === 'monthly' ? value : 'daily'
+}
+
+function asReportType(value: unknown): MailSettings['reportType'] {
+  return value === 'overdue' || value === 'full' ? value : 'summary'
 }
 
 function makeId(prefix: string) {

@@ -107,6 +107,19 @@ export type TaskComment = {
   createdAt: string
 }
 
+export type MailInterval = 'daily' | 'weekly' | 'monthly'
+
+export type MailReportType = 'summary' | 'overdue' | 'full'
+
+export type MailSettings = {
+  enabled: boolean
+  interval: MailInterval
+  sendTime: string
+  recipients: string[]
+  reportType: MailReportType
+  lastSentAt: string
+}
+
 export type DashboardStats = {
   totalProjects: number
   activeProjects: number

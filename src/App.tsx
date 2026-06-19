@@ -29,6 +29,7 @@ import { api, isLiveApi } from './services/api'
 import type {
   ActivityItem,
   DashboardStats,
+  MailSettings,
   Milestone,
   Project,
   SectionKey,
@@ -67,6 +68,15 @@ const themeStorageKey = 'project-management-theme'
 
 type AppTheme = 'classic' | 'premium-dark'
 
+const defaultMailSettings: MailSettings = {
+  enabled: false,
+  interval: 'daily',
+  sendTime: '08:00',
+  recipients: [],
+  reportType: 'summary',
+  lastSentAt: '',
+}
+
 type DashboardFilter = {
   section: SectionKey
   title: string
@@ -96,6 +106,7 @@ function App() {
   const [subModules, setSubModules] = useState<SubModule[]>([])
   const [activity, setActivity] = useState<ActivityItem[]>([])
   const [comments, setComments] = useState<TaskComment[]>([])
+  const [mailSettings, setMailSettings] = useState<MailSettings>(defaultMailSettings)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
@@ -132,6 +143,7 @@ function App() {
         subModuleRows,
         activityRows,
         commentRows,
+        mailRows,
       ] = await Promise.all([
         api.getProjects(),
         api.getTasks(),
@@ -141,6 +153,7 @@ function App() {
         api.getSubModules(),
         api.getActivity(),
         api.getComments(),
+        api.getMailSettings(),
       ])
       setProjects(projectRows)
       setTasks(taskRows)
@@ -150,6 +163,7 @@ function App() {
       setSubModules(subModuleRows)
       setActivity(activityRows)
       setComments(commentRows)
+      setMailSettings(mailRows)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load data')
     } finally {
@@ -387,6 +401,19 @@ function App() {
     flash(live ? 'Task status synced' : 'Task status updated locally')
   }
 
+  async function saveMailSchedule(settings: MailSettings) {
+    const saved = await api.saveMailSettings(settings)
+    setMailSettings(saved)
+    flash(live ? 'Mail schedule saved to Google Sheets' : 'Mail schedule saved locally')
+  }
+
+  async function sendMailNow(settings: MailSettings) {
+    const saved = await api.saveMailSettings(settings)
+    setMailSettings(saved)
+    const result = await api.sendProjectSummaryEmail(saved)
+    flash(live ? `Mail sent to ${result.recipients} user(s)` : 'Mail preview simulated locally')
+  }
+
   async function syncHierarchyStatuses(
     nextTasks: TaskItem[],
     nextModules = modules,
@@ -463,6 +490,7 @@ function App() {
           stats={stats}
           live={live}
           theme={theme}
+          mailSettings={mailSettings}
           dashboardFilter={dashboardFilter}
           onNewProject={() => setProjectModal('new')}
           onEditProject={setProjectModal}
@@ -481,6 +509,8 @@ function App() {
           onEditTeamMember={setTeamModal}
           onDeleteTeamMember={deleteTeamMember}
           onThemeChange={setTheme}
+          onSaveMailSettings={saveMailSchedule}
+          onSendMailNow={sendMailNow}
         />
       )}
     </main>
@@ -716,6 +746,7 @@ function SectionContent(props: {
   stats: DashboardStats
   live: boolean
   theme: AppTheme
+  mailSettings: MailSettings
   dashboardFilter: DashboardFilter | null
   onNewProject: () => void
   onEditProject: (project: Project) => void
@@ -734,6 +765,8 @@ function SectionContent(props: {
   onEditTeamMember: (member: TeamMember) => void
   onDeleteTeamMember: (member: TeamMember) => void
   onThemeChange: (theme: AppTheme) => void
+  onSaveMailSettings: (settings: MailSettings) => Promise<void>
+  onSendMailNow: (settings: MailSettings) => Promise<void>
 }) {
   const {
     active,
@@ -749,6 +782,7 @@ function SectionContent(props: {
     stats,
     live,
     theme,
+    mailSettings,
     dashboardFilter,
     onNewProject,
     onEditProject,
@@ -767,6 +801,8 @@ function SectionContent(props: {
     onEditTeamMember,
     onDeleteTeamMember,
     onThemeChange,
+    onSaveMailSettings,
+    onSendMailNow,
   } = props
 
   if (active === 'projects') {
@@ -867,7 +903,15 @@ function SectionContent(props: {
     return (
       <>
         <PageHeader title="Settings" subtitle="Google Sheets API and deployment status." />
-        <SettingsView live={live} theme={theme} onThemeChange={onThemeChange} />
+        <SettingsView
+          live={live}
+          theme={theme}
+          team={allTeam}
+          mailSettings={mailSettings}
+          onThemeChange={onThemeChange}
+          onSaveMailSettings={onSaveMailSettings}
+          onSendMailNow={onSendMailNow}
+        />
       </>
     )
   }
@@ -1876,15 +1920,29 @@ function ActivityFeed({ activity }: { activity: ActivityItem[] }) {
 function SettingsView({
   live,
   theme,
+  team,
+  mailSettings,
   onThemeChange,
+  onSaveMailSettings,
+  onSendMailNow,
 }: {
   live: boolean
   theme: AppTheme
+  team: TeamMember[]
+  mailSettings: MailSettings
   onThemeChange: (theme: AppTheme) => void
+  onSaveMailSettings: (settings: MailSettings) => Promise<void>
+  onSendMailNow: (settings: MailSettings) => Promise<void>
 }) {
   const apiUrl = import.meta.env.VITE_APPS_SCRIPT_URL || 'Local demo mode'
   return (
     <div className="settings-stack">
+      <MailSettingsPanel
+        team={team}
+        settings={mailSettings}
+        onSave={onSaveMailSettings}
+        onSendNow={onSendMailNow}
+      />
       <section className="panel settings-panel">
         <PanelTitle title="Theme" />
         <div className="theme-options">
@@ -1924,6 +1982,144 @@ function SettingsView({
         </dl>
       </section>
     </div>
+  )
+}
+
+function MailSettingsPanel({
+  team,
+  settings,
+  onSave,
+  onSendNow,
+}: {
+  team: TeamMember[]
+  settings: MailSettings
+  onSave: (settings: MailSettings) => Promise<void>
+  onSendNow: (settings: MailSettings) => Promise<void>
+}) {
+  const [form, setForm] = useState<MailSettings>(settings)
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const activeUsers = team.filter((member) => member.status !== 'Inactive' && member.email)
+
+  function toggleRecipient(memberId: string) {
+    setForm((current) => ({
+      ...current,
+      recipients: current.recipients.includes(memberId)
+        ? current.recipients.filter((id) => id !== memberId)
+        : [...current.recipients, memberId],
+    }))
+  }
+
+  async function submitSave() {
+    setSaving(true)
+    try {
+      await onSave(form)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function submitTest() {
+    setTesting(true)
+    try {
+      await onSendNow(form)
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <section className="panel settings-panel mail-settings-panel">
+      <PanelTitle title="Mail Reports" />
+      <div className="mail-toggle-row">
+        <div>
+          <strong>Scheduled summary</strong>
+          <span>{form.enabled ? 'Enabled' : 'Disabled'}</span>
+        </div>
+        <label className="switch-control">
+          <input
+            type="checkbox"
+            checked={form.enabled}
+            onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))}
+          />
+          <i />
+        </label>
+      </div>
+      <div className="mail-control-grid">
+        <label>
+          Interval
+          <select
+            value={form.interval}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, interval: event.target.value as MailSettings['interval'] }))
+            }
+          >
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+            <option value="monthly">Monthly</option>
+          </select>
+        </label>
+        <label>
+          Send time
+          <input
+            type="time"
+            value={form.sendTime}
+            onChange={(event) => setForm((current) => ({ ...current, sendTime: event.target.value }))}
+          />
+        </label>
+        <label>
+          Report type
+          <select
+            value={form.reportType}
+            onChange={(event) =>
+              setForm((current) => ({ ...current, reportType: event.target.value as MailSettings['reportType'] }))
+            }
+          >
+            <option value="summary">Summary</option>
+            <option value="overdue">Overdue</option>
+            <option value="full">Full</option>
+          </select>
+        </label>
+      </div>
+      <div className="recipient-panel">
+        <div className="recipient-panel-title">
+          <strong>Recipients</strong>
+          <span>{form.recipients.length} selected</span>
+        </div>
+        <div className="recipient-list">
+          {activeUsers.length ? (
+            activeUsers.map((member) => (
+              <label className="recipient-option" key={member.id}>
+                <input
+                  type="checkbox"
+                  checked={form.recipients.includes(member.id)}
+                  onChange={() => toggleRecipient(member.id)}
+                />
+                <span>
+                  <strong>{member.name}</strong>
+                  <small>{member.email}</small>
+                </span>
+              </label>
+            ))
+          ) : (
+            <div className="empty-card">Add team members with email IDs first.</div>
+          )}
+        </div>
+      </div>
+      <div className="mail-footer">
+        <span>Last sent: {form.lastSentAt ? formatDateTime(form.lastSentAt) : 'Not sent yet'}</span>
+        <div>
+          <button className="secondary-button" onClick={submitTest} disabled={testing || !form.recipients.length}>
+            {testing ? <Loader2 className="spin" size={17} /> : <Bell size={17} />}
+            Send Test
+          </button>
+          <button className="primary-button" onClick={submitSave} disabled={saving}>
+            {saving ? <Loader2 className="spin" size={17} /> : <CheckCircle2 size={17} />}
+            Save
+          </button>
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -3073,6 +3269,19 @@ function formatActivityTime(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return String(value).slice(0, 16).replace('T', ' ')
   return date.toLocaleString(undefined, {
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function formatDateTime(value: string) {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value.slice(0, 16).replace('T', ' ')
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
     month: 'short',
     day: '2-digit',
     hour: '2-digit',
