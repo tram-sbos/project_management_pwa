@@ -2233,6 +2233,7 @@ function ProjectModal({
   onSave: (project: Project) => Promise<void>
 }) {
   const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
   const [form, setForm] = useState<Project>(
     initial ?? {
       id: '',
@@ -2250,6 +2251,12 @@ function ProjectModal({
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    const validationError = validateDateRange('Project', form.startDate, form.endDate)
+    if (validationError) {
+      setFormError(validationError)
+      return
+    }
+    setFormError('')
     setSaving(true)
     try {
       await onSave(form)
@@ -2261,6 +2268,7 @@ function ProjectModal({
   return (
     <Modal title={initial ? 'Edit Project' : 'New Project'} onClose={onClose}>
       <form onSubmit={submit} className="form-grid">
+        {formError && <div className="form-error">{formError}</div>}
         <Field label="Project name" value={form.name} onChange={(name) => setForm({ ...form, name })} />
         <Field label="Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
         <label>
@@ -2319,6 +2327,7 @@ function TaskModal({
   onAddComment: (task: TaskItem, comment: string) => Promise<void>
 }) {
   const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
   const [commentText, setCommentText] = useState('')
   const [form, setForm] = useState<TaskItem>(
     initial ?? {
@@ -2342,6 +2351,12 @@ function TaskModal({
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    const validationError = validateDueDate('Task', minimumDueDate, form.dueDate)
+    if (validationError) {
+      setFormError(validationError)
+      return
+    }
+    setFormError('')
     setSaving(true)
     try {
       await onSave(form)
@@ -2360,6 +2375,7 @@ function TaskModal({
   return (
     <Modal title={initial?.id ? 'Edit Task' : 'New Task'} onClose={onClose}>
       <form onSubmit={submit} className="form-grid">
+        {formError && <div className="form-error">{formError}</div>}
         <label>
           Project
           <select value={form.projectId} onChange={(event) => setForm({ ...form, projectId: event.target.value, moduleId: '', submoduleId: '' })}>
@@ -2519,6 +2535,7 @@ function MilestoneModal({
   onSave: (milestone: Milestone) => Promise<void>
 }) {
   const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
   const [form, setForm] = useState<Milestone>(
     initial ?? {
       id: '',
@@ -2529,9 +2546,16 @@ function MilestoneModal({
       status: 'Pending',
     },
   )
+  const projectStartDate = projects.find((project) => project.id === form.projectId)?.startDate || ''
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    const validationError = validateDueDate('Milestone', projectStartDate, form.dueDate)
+    if (validationError) {
+      setFormError(validationError)
+      return
+    }
+    setFormError('')
     setSaving(true)
     try {
       await onSave(form)
@@ -2543,6 +2567,7 @@ function MilestoneModal({
   return (
     <Modal title={initial ? 'Edit Milestone' : 'New Milestone'} onClose={onClose}>
       <form onSubmit={submit} className="form-grid">
+        {formError && <div className="form-error">{formError}</div>}
         <label>
           Project
           <select value={form.projectId} onChange={(event) => setForm({ ...form, projectId: event.target.value })}>
@@ -2565,7 +2590,7 @@ function MilestoneModal({
           label="Due date"
           type="date"
           value={form.dueDate}
-          min={projects.find((project) => project.id === form.projectId)?.startDate || ''}
+          min={projectStartDate}
           onChange={(dueDate) => setForm({ ...form, dueDate })}
         />
         <label>
@@ -2969,6 +2994,7 @@ function ModuleModal({
   onSave: (module: WorkModule) => Promise<void>
 }) {
   const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
   const [form, setForm] = useState<WorkModule>(
     initial ?? {
       id: '',
@@ -2984,6 +3010,12 @@ function ModuleModal({
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    const validationError = validateDateRange('Module', form.startDate, form.endDate)
+    if (validationError) {
+      setFormError(validationError)
+      return
+    }
+    setFormError('')
     setSaving(true)
     try {
       await onSave(form)
@@ -2995,6 +3027,7 @@ function ModuleModal({
   return (
     <Modal title={initial ? 'Edit Module' : 'New Module'} onClose={onClose}>
       <form className="form-grid" onSubmit={submit}>
+        {formError && <div className="form-error">{formError}</div>}
         <Field label="Module name" value={form.name} onChange={(name) => setForm({ ...form, name })} />
         <Field label="Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
         <OwnerSelect value={form.owner} team={team} onChange={(owner) => setForm({ ...form, owner })} />
@@ -3023,6 +3056,7 @@ function SubModuleModal({
   onSave: (submodule: SubModule) => Promise<void>
 }) {
   const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
   const [form, setForm] = useState<SubModule>(
     initial ?? {
       id: '',
@@ -3039,6 +3073,12 @@ function SubModuleModal({
 
   async function submit(event: FormEvent) {
     event.preventDefault()
+    const validationError = validateDateRange('Sub module', form.startDate, form.endDate)
+    if (validationError) {
+      setFormError(validationError)
+      return
+    }
+    setFormError('')
     setSaving(true)
     try {
       await onSave(form)
@@ -3050,6 +3090,7 @@ function SubModuleModal({
   return (
     <Modal title={initial ? 'Edit Sub Module' : 'New Sub Module'} onClose={onClose}>
       <form className="form-grid" onSubmit={submit}>
+        {formError && <div className="form-error">{formError}</div>}
         <Field label="Sub module name" value={form.name} onChange={(name) => setForm({ ...form, name })} />
         <Field label="Description" value={form.description} onChange={(description) => setForm({ ...form, description })} />
         <OwnerSelect value={form.owner} team={team} onChange={(owner) => setForm({ ...form, owner })} />
